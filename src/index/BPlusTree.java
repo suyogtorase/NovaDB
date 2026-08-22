@@ -123,7 +123,148 @@ public class BPlusTree<K extends Comparable<K>, V> {
     }
 
     public void delete(K key) {
-        // Placeholder stub for Phase 6E
+        if (root == null || root.keyCount() == 0 && root.isLeaf()) {
+            return;
+        }
+
+        LeafNode<K, V> leaf = findLeaf(key);
+        int index = Collections.binarySearch(leaf.keys, key);
+        
+        if (index >= 0) {
+            leaf.keys.remove(index);
+            leaf.values.remove(index);
+            
+            if (leaf == root) {
+                return; // Root leaf node can have any number of keys
+            }
+            
+            int minKeys = (int) Math.ceil((order - 1) / 2.0);
+            if (leaf.keyCount() < minKeys) {
+                handleUnderflow(leaf);
+            }
+        }
+    }
+
+    private void handleUnderflow(Node<K, V> node) {
+        if (node == root) {
+            // Phase 4: Root Shrinkage
+            if (!root.isLeaf() && root.keyCount() == 0) {
+                root = ((InternalNode<K, V>) root).getChild(0);
+                root.setParent(null);
+            }
+            return;
+        }
+        
+        InternalNode<K, V> parent = node.getParent();
+        int childIndex = parent.children.indexOf(node);
+        
+        if (node.isLeaf()) {
+            LeafNode<K, V> leaf = (LeafNode<K, V>) node;
+            LeafNode<K, V> leftSibling = childIndex > 0 ? (LeafNode<K, V>) parent.getChild(childIndex - 1) : null;
+            LeafNode<K, V> rightSibling = childIndex < parent.childCount() - 1 ? (LeafNode<K, V>) parent.getChild(childIndex + 1) : null;
+            
+            int minKeys = (int) Math.ceil((order - 1) / 2.0);
+            
+            if (leftSibling != null && leftSibling.keyCount() > minKeys) {
+                K borrowedKey = leftSibling.keys.remove(leftSibling.keys.size() - 1);
+                V borrowedValue = leftSibling.values.remove(leftSibling.values.size() - 1);
+                leaf.keys.add(0, borrowedKey);
+                leaf.values.add(0, borrowedValue);
+                parent.keys.set(childIndex - 1, leaf.keys.get(0));
+            } else if (rightSibling != null && rightSibling.keyCount() > minKeys) {
+                K borrowedKey = rightSibling.keys.remove(0);
+                V borrowedValue = rightSibling.values.remove(0);
+                leaf.keys.add(borrowedKey);
+                leaf.values.add(borrowedValue);
+                parent.keys.set(childIndex, rightSibling.keys.get(0));
+            } else {
+                if (leftSibling != null) {
+                    leftSibling.keys.addAll(leaf.keys);
+                    leftSibling.values.addAll(leaf.values);
+                    leftSibling.next = leaf.next;
+                    
+                    parent.removeKey(childIndex - 1);
+                    parent.removeChild(childIndex);
+                } else if (rightSibling != null) {
+                    leaf.keys.addAll(rightSibling.keys);
+                    leaf.values.addAll(rightSibling.values);
+                    leaf.next = rightSibling.next;
+                    
+                    parent.removeKey(childIndex);
+                    parent.removeChild(childIndex + 1);
+                }
+                
+                int parentMinKeys = (int) Math.ceil(order / 2.0) - 1;
+                if (parent.keyCount() < parentMinKeys) {
+                    handleUnderflow(parent);
+                }
+            }
+        } else {
+            // Phase 3: Internal Node Underflow Handling
+            InternalNode<K, V> internal = (InternalNode<K, V>) node;
+            InternalNode<K, V> leftSibling = childIndex > 0 ? (InternalNode<K, V>) parent.getChild(childIndex - 1) : null;
+            InternalNode<K, V> rightSibling = childIndex < parent.childCount() - 1 ? (InternalNode<K, V>) parent.getChild(childIndex + 1) : null;
+            
+            int minKeys = (int) Math.ceil(order / 2.0) - 1;
+            
+            if (leftSibling != null && leftSibling.keyCount() > minKeys) {
+                // Borrow from Left
+                K borrowedKey = leftSibling.keys.remove(leftSibling.keys.size() - 1);
+                Node<K, V> borrowedChild = leftSibling.children.remove(leftSibling.children.size() - 1);
+                
+                K parentKey = parent.keys.get(childIndex - 1);
+                parent.keys.set(childIndex - 1, borrowedKey);
+                
+                internal.keys.add(0, parentKey);
+                internal.children.add(0, borrowedChild);
+                borrowedChild.setParent(internal);
+                
+            } else if (rightSibling != null && rightSibling.keyCount() > minKeys) {
+                // Borrow from Right
+                K borrowedKey = rightSibling.keys.remove(0);
+                Node<K, V> borrowedChild = rightSibling.children.remove(0);
+                
+                K parentKey = parent.keys.get(childIndex);
+                parent.keys.set(childIndex, borrowedKey);
+                
+                internal.keys.add(parentKey);
+                internal.children.add(borrowedChild);
+                borrowedChild.setParent(internal);
+                
+            } else {
+                // Merge Sub-trees
+                if (leftSibling != null) {
+                    K parentKey = parent.keys.get(childIndex - 1);
+                    leftSibling.keys.add(parentKey);
+                    leftSibling.keys.addAll(internal.keys);
+                    
+                    for (Node<K, V> child : internal.children) {
+                        leftSibling.children.add(child);
+                        child.setParent(leftSibling);
+                    }
+                    
+                    parent.removeKey(childIndex - 1);
+                    parent.removeChild(childIndex);
+                } else if (rightSibling != null) {
+                    K parentKey = parent.keys.get(childIndex);
+                    internal.keys.add(parentKey);
+                    internal.keys.addAll(rightSibling.keys);
+                    
+                    for (Node<K, V> child : rightSibling.children) {
+                        internal.children.add(child);
+                        child.setParent(internal);
+                    }
+                    
+                    parent.removeKey(childIndex);
+                    parent.removeChild(childIndex + 1);
+                }
+                
+                int parentMinKeys = (int) Math.ceil(order / 2.0) - 1;
+                if (parent.keyCount() < parentMinKeys) {
+                    handleUnderflow(parent);
+                }
+            }
+        }
     }
 
     public int size() {
