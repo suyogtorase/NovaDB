@@ -128,11 +128,14 @@ public class QueryEngine {
         if (targetIndex != null) {
             Integer pos = indexManager.searchKey(targetIndex, (Comparable) value);
             if (pos != null) {
-                throw new QueryException(errorMsg);
+                Record r = storageManager.getRecord(tableName, pos);
+                if (r != null && !r.isDeleted()) {
+                    throw new QueryException(errorMsg);
+                }
             }
         } else {
             for (Record record : allRecords) {
-                if (matchCondition(record, colIndex, value)) {
+                if (!record.isDeleted() && matchCondition(record, colIndex, value)) {
                     throw new QueryException(errorMsg);
                 }
             }
@@ -168,11 +171,14 @@ public class QueryEngine {
                 if (targetIndex != null) {
                     Integer pos = indexManager.searchKey(targetIndex, (Comparable) value);
                     if (pos != null) {
-                        found = true;
+                        Record r = storageManager.getRecord(parentTableName, pos);
+                        if (r != null && !r.isDeleted()) {
+                            found = true;
+                        }
                     }
                 } else {
                     for (Record parentRecord : storageManager.getRecords(parentTableName)) {
-                        if (matchCondition(parentRecord, parentColIndex, value)) {
+                        if (!parentRecord.isDeleted() && matchCondition(parentRecord, parentColIndex, value)) {
                             found = true;
                             break;
                         }
@@ -210,11 +216,14 @@ public class QueryEngine {
                     if (targetIndex != null) {
                         Integer pos = indexManager.searchKey(targetIndex, (Comparable) deletedValueForThisFk);
                         if (pos != null) {
-                            throw new QueryException("Foreign key constraint violation.");
+                            Record r = storageManager.getRecord(childTableName, pos);
+                            if (r != null && !r.isDeleted()) {
+                                throw new QueryException("Foreign key constraint violation.");
+                            }
                         }
                     } else {
                         for (Record childRecord : storageManager.getRecords(childTableName)) {
-                            if (matchCondition(childRecord, childColIndex, deletedValueForThisFk)) {
+                            if (!childRecord.isDeleted() && matchCondition(childRecord, childColIndex, deletedValueForThisFk)) {
                                 throw new QueryException("Foreign key constraint violation.");
                             }
                         }
@@ -320,7 +329,7 @@ public class QueryEngine {
                             "\nReturned position=" + position);
             if (position != null) {
                 Record r = storageManager.getRecord(cmd.getTableName(), position);
-                if (r != null) {
+                if (r != null && !r.isDeleted()) {
                     results.add(r);
                 }
             }
@@ -350,6 +359,7 @@ public class QueryEngine {
             }
 
             for (Record record : storageManager.getRecords(cmd.getTableName())) {
+                if (record.isDeleted()) continue;
                 if (whereColIndex == -1 || filterAtEnd || matchCondition(record, whereColIndex, cmd.getWhereValue())) {
                     results.add(record);
                 }
@@ -459,6 +469,7 @@ public class QueryEngine {
                     } else {
                         for (int j = 0; j < targetRecords.size(); j++) {
                             Record targetRecord = targetRecords.get(j);
+                            if (targetRecord.isDeleted()) continue;
                             if (searchKey != null && matchCondition(targetRecord, rightJoinColIndex, searchKey)) {
                                 Record merged = new Record();
                                 for (Cell c : leftRecord.getCells()) merged.addCell(new Cell(c.getValue()));
@@ -480,7 +491,7 @@ public class QueryEngine {
 
                 if (join.getJoinType().equals("RIGHT")) {
                     for (int j = 0; j < targetRecords.size(); j++) {
-                        if (!rightMatched[j]) {
+                        if (!rightMatched[j] && !targetRecords.get(j).isDeleted()) {
                             Record merged = new Record();
                             int leftColCount = colNames.size() - targetSchema.getColumnCount();
                             for (int i = 0; i < leftColCount; i++) merged.addCell(new Cell(null));
@@ -576,7 +587,10 @@ public class QueryEngine {
         int updatedCount = 0;
 
         List<Record> allRecords = storageManager.getRecords(cmd.getTableName());
-        for (Record record : allRecords) {
+        for (int i = 0; i < allRecords.size(); i++) {
+            Record record = allRecords.get(i);
+            if (record.isDeleted()) continue;
+            
             if (matchCondition(record, whereColIndex, cmd.getWhereValue())) {
                 if (updateColumn.isPrimaryKey() || updateColumn.isUnique()) {
                     Object oldValue = record.getCell(updateColIndex).getValue();
@@ -599,7 +613,7 @@ public class QueryEngine {
                     Comparable newKey = (colIdx == updateColIndex) ? (Comparable) cmd.getNewValue() : oldKey;
 
                     if (!oldKey.equals(newKey)) {
-                        indexManager.updateKey(index, oldKey, newKey, 0);
+                        indexManager.updateKey(index, oldKey, newKey, i);
                     }
                 }
 
@@ -623,6 +637,7 @@ public class QueryEngine {
         int counter = 0;
 
         for (Record record : storageManager.getRecords(cmd.getTableName())) {
+            if (record.isDeleted()) continue;
             if (matchCondition(record, whereColIndex, cmd.getWhereValue())) {
                 validateDeleteForeignKeys(cmd.getTableName(), record);
                 

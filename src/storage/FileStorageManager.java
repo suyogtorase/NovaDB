@@ -102,6 +102,10 @@ public class FileStorageManager implements StorageManager {
 
     @Override
     public List<Record> getRecords(String tableName) {
+        if (sessionCache.containsKey(tableName)) {
+            return sessionCache.get(tableName);
+        }
+
         File file = getTableFile(tableName);
         List<Record> records = new ArrayList<>();
 
@@ -159,7 +163,9 @@ public class FileStorageManager implements StorageManager {
     public void deleteRecords(String tableName, List<Record> recordsToDelete) {
         List<Record> allRecords = sessionCache.get(tableName);
         if (allRecords != null) {
-            allRecords.removeAll(recordsToDelete);
+            for (Record record : recordsToDelete) {
+                record.setDeleted(true);
+            }
             rewriteFile(tableName, allRecords);
         }
     }
@@ -171,6 +177,7 @@ public class FileStorageManager implements StorageManager {
                 DataOutputStream dos = new DataOutputStream(fos)) {
 
             for (Record record : records) {
+                if (record.isDeleted()) continue;
                 byte[] data = serializer.serialize(record);
                 dos.writeInt(data.length);
                 dos.write(data);

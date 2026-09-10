@@ -60,6 +60,10 @@ public class MemoryStorageManager implements StorageManager {
     @Override
     public void deleteRecords(String tableName, List<Record> recordsToDelete) {
         Table table = database.getTable(tableName);
-        if (table != null) table.getRecords().removeAll(recordsToDelete);
+        if (table != null) {
+            for (Record record : recordsToDelete) {
+                record.setDeleted(true);
+            }
+        }
     }
 }
